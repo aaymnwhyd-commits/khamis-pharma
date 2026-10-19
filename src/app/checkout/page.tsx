@@ -19,6 +19,7 @@ import {
   Wallet,
   Building,
   Clock,
+  MessageCircle,
 } from "lucide-react";
 import { useCart } from "@/components/cart/cart-context";
 import { useToast } from "@/components/ui/toaster";
@@ -30,8 +31,9 @@ export default function CheckoutPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [step, setStep] = useState<Step>("info");
-  const [orderNumber, setOrderNumber] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [orderNumber, setOrderNumber] = useState<string>("");
+  const [whatsappLink, setWhatsappLink] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -65,6 +67,15 @@ export default function CheckoutPage() {
     }
     setLoading(true);
     try {
+      const orderItemsText = items
+        .map(
+          (i, idx) =>
+            `${idx + 1}. ${i.product.name} (الكمية: ${i.quantity}) - ${formatPrice(
+              parseFloat(i.product.price) * i.quantity
+            )}`
+        )
+        .join("\n");
+
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -86,10 +97,46 @@ export default function CheckoutPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setOrderNumber(data.orderNumber);
+        const generatedOrderNumber = String(data.orderNumber || "NEW");
+        setOrderNumber(generatedOrderNumber);
+
+        // تجهيز نص الرسالة
+        const waMessage =
+          `💊 *طلب جديد من موقع خميس فارما* 💊\n\n` +
+          `🔖 *رقم الطلب:* #${generatedOrderNumber}\n` +
+          `👤 *اسم العميل:* ${form.name}\n` +
+          `📞 *رقم الهاتف:* ${form.phone}\n` +
+          `🏥 *الصيدلية/المستشفى:* ${form.pharmacy || "غير محدد"}\n` +
+          `📍 *العنوان:* ${form.city} - ${form.address}\n` +
+          `💳 *طريقة الدفع:* ${
+            form.paymentMethod === "cod"
+              ? "الدفع عند الاستلام"
+              : form.paymentMethod === "bank"
+              ? "تحويل بنكي"
+              : "بطاقة ائتمان"
+          }\n\n` +
+          `📦 *المنتجات المطلوبة:*\n${orderItemsText}\n\n` +
+          `💰 *المجموع الكلي:* ${formatPrice(total)}\n` +
+          (form.notes ? `📝 *ملاحظات:* ${form.notes}` : "");
+
+        // ضغ رقم الجوال الخاص بك هنا برمز الدولة 967
+        const targetPhoneNumber = "780143481"; 
+        const waUrl = `https://wa.me/${targetPhoneNumber}?text=${encodeURIComponent(
+          waMessage
+        )}`;
+        setWhatsappLink(waUrl);
+
         setStep("success");
         clearCart();
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        
+        if (typeof window !== "undefined") {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          
+          // التوجيه المباشر لتفادي حظر النوافذ المنبثقة على التلفونات
+          setTimeout(() => {
+            window.location.href = waUrl;
+          }, 800);
+        }
       } else {
         toast(data.error || "حدث خطأ، يرجى المحاولة مرة أخرى", "error");
       }
@@ -102,7 +149,7 @@ export default function CheckoutPage() {
 
   if (step === "success") {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center p-6 bg-gradient-to-br from-teal-50 via-white to-emerald-50">
+      <div className="min-h-[70vh] flex items-center justify-center p-6 bg-gradient-to-br from-teal-50 via-white to-emerald-50" dir="rtl">
         <div className="max-w-xl w-full bg-white rounded-3xl p-8 md:p-12 text-center shadow-xl border border-teal-100 animate-scale-in">
           <div className="relative w-20 h-20 mx-auto mb-6">
             <div className="absolute inset-0 rounded-full bg-emerald-100 animate-pulse-ring"></div>
@@ -114,8 +161,7 @@ export default function CheckoutPage() {
             تم استلام طلبك بنجاح!
           </h1>
           <p className="text-slate-600 mb-6 leading-relaxed">
-            شكراً لك على ثقتك بشركة خميس فارما. سنتواصل معك قريباً لتأكيد الطلب
-            وترتيب موعد التوصيل.
+            شكراً لك على ثقتك بشركة خميس فارما. جاري توجيهك لنظام إشعار الواتساب لتأكيد طلبك.
           </p>
 
           <div className="bg-gradient-to-br from-teal-50 to-emerald-50 rounded-2xl p-5 mb-6 inline-block">
@@ -125,6 +171,18 @@ export default function CheckoutPage() {
             </div>
           </div>
 
+          {whatsappLink && (
+            <div className="mb-8">
+              <a
+                href={whatsappLink}
+                className="inline-flex items-center justify-center gap-2 px-6 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-cairo font-bold rounded-xl shadow-lg hover:shadow-xl transition-all btn-press w-full text-lg"
+              >
+                <MessageCircle className="w-6 h-6" />
+                إرسال الطلب عبر الواتساب فوراً 💬
+              </a>
+            </div>
+          )}
+
           <div className="bg-slate-50 rounded-2xl p-5 mb-8 text-right">
             <h3 className="font-cairo font-bold text-slate-900 mb-3 text-sm">
               ماذا يحدث الآن؟
@@ -132,7 +190,7 @@ export default function CheckoutPage() {
             <ul className="space-y-2 text-sm text-slate-700">
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-                سيتم مراجعة طلبك والتواصل معك خلال 2 ساعة عمل لتأكيد التفاصيل
+                سيتم مراجعة طلبك والتواصل معك خلال ساعتي عمل لتأكيد التفاصيل
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
@@ -166,9 +224,8 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="bg-slate-50/40 min-h-screen">
+    <div className="bg-slate-50/40 min-h-screen" dir="rtl">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Header */}
         <div className="mb-8">
           <Link
             href="/products"
@@ -180,7 +237,6 @@ export default function CheckoutPage() {
           <h1 className="font-cairo font-black text-3xl text-slate-900">إتمام الطلب</h1>
         </div>
 
-        {/* Steps indicator */}
         <div className="mb-8">
           <div className="flex items-center justify-center gap-2 md:gap-4">
             {[
@@ -224,7 +280,6 @@ export default function CheckoutPage() {
         </div>
 
         <div className="grid lg:grid-cols-[1fr_400px] gap-8">
-          {/* FORM */}
           <div className="space-y-6">
             {step === "info" && (
               <div className="bg-white rounded-2xl border border-slate-100 p-6 md:p-8 animate-fade-in">
@@ -302,7 +357,9 @@ export default function CheckoutPage() {
                         return;
                       }
                       setStep("shipping");
-                      window.scrollTo({ top: 0, behavior: "smooth" });
+                      if (typeof window !== "undefined") {
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }
                     }}
                     className="inline-flex items-center gap-2 px-7 py-3.5 bg-gradient-to-l from-teal-600 to-emerald-600 text-white font-cairo font-bold rounded-xl hover:shadow-xl hover:shadow-teal-600/20 transition-all btn-press"
                   >
@@ -325,7 +382,6 @@ export default function CheckoutPage() {
 
                 <div className="space-y-3">
                   <ShippingOption
-                    id="local"
                     title="توصيل داخلي (تعز)"
                     desc="توصيل خلال 24 ساعة داخل مدينة تعز"
                     price="مجاني"
@@ -333,14 +389,12 @@ export default function CheckoutPage() {
                     selected
                   />
                   <ShippingOption
-                    id="gov"
                     title="توصيل للمحافظات الأخرى"
                     desc="توصيل خلال 2-4 أيام عمل"
                     price={subtotal > 50000 ? "مجاني" : formatPrice(1500)}
                     icon={<Package className="w-5 h-5" />}
                   />
                   <ShippingOption
-                    id="pickup"
                     title="استلام من المستودع"
                     desc="استلام مباشر من مستودع الشركة في تعز"
                     price="مجاني"
@@ -370,7 +424,9 @@ export default function CheckoutPage() {
                   <button
                     onClick={() => {
                       setStep("payment");
-                      window.scrollTo({ top: 0, behavior: "smooth" });
+                      if (typeof window !== "undefined") {
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }
                     }}
                     className="inline-flex items-center gap-2 px-7 py-3 bg-gradient-to-l from-teal-600 to-emerald-600 text-white font-cairo font-bold rounded-xl hover:shadow-xl hover:shadow-teal-600/20 transition-all btn-press"
                   >
@@ -393,7 +449,6 @@ export default function CheckoutPage() {
 
                 <div className="space-y-3">
                   <PaymentOption
-                    id="cod"
                     selected={form.paymentMethod === "cod"}
                     onSelect={() => setForm({ ...form, paymentMethod: "cod" })}
                     icon={<Wallet className="w-5 h-5" />}
@@ -401,7 +456,6 @@ export default function CheckoutPage() {
                     desc="ادفع نقداً عند استلام الطلب"
                   />
                   <PaymentOption
-                    id="bank"
                     selected={form.paymentMethod === "bank"}
                     onSelect={() => setForm({ ...form, paymentMethod: "bank" })}
                     icon={<Building2 className="w-5 h-5" />}
@@ -409,7 +463,6 @@ export default function CheckoutPage() {
                     desc="تحويل بنكي إلى حساب الشركة (يُرسل لكم رقم الحساب بعد تأكيد الطلب)"
                   />
                   <PaymentOption
-                    id="credit"
                     selected={form.paymentMethod === "credit"}
                     onSelect={() => setForm({ ...form, paymentMethod: "credit" })}
                     icon={<CreditCard className="w-5 h-5" />}
@@ -455,7 +508,6 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {/* Trust badges */}
             <div className="grid grid-cols-3 gap-3">
               {[
                 { icon: Shield, label: "معاملة آمنة" },
@@ -473,7 +525,6 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* ORDER SUMMARY */}
           <div className="lg:sticky lg:top-28 lg:self-start">
             <div className="bg-white rounded-2xl border border-slate-100 p-6">
               <h3 className="font-cairo font-bold text-lg text-slate-900 mb-4 flex items-center gap-2">
@@ -490,7 +541,7 @@ export default function CheckoutPage() {
                       </div>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                  src={item.product.image || ""}
+                        src={item.product.image || ""}
                         alt={item.product.name}
                         className="w-full h-full object-contain p-1"
                       />
@@ -598,7 +649,6 @@ function ShippingOption({
   icon,
   selected,
 }: {
-  id: string;
   title: string;
   desc: string;
   price: string;
@@ -642,7 +692,6 @@ function PaymentOption({
   title,
   desc,
 }: {
-  id: string;
   selected: boolean;
   onSelect: () => void;
   icon: React.ReactNode;
@@ -652,6 +701,7 @@ function PaymentOption({
   return (
     <button
       onClick={onSelect}
+      type="button"
       className={`w-full flex items-start gap-4 p-4 rounded-2xl border-2 text-right transition-all ${
         selected
           ? "border-teal-500 bg-teal-50/50"

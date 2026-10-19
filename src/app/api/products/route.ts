@@ -112,17 +112,16 @@ export async function GET(request: Request) {
   return NextResponse.json({ products, page, limit });
 }
 
-// دالة تعديل دواء (PUT)
+// دالة تعديل دواء (PUT) - مع دعم التصنيف
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { id, name, price, imageUrl, brand, description, nameEn } = body;
+    const { id, name, price, imageUrl, brand, description, nameEn, categoryId } = body;
 
     if (!id) {
       return NextResponse.json({ error: "رقم الدواء (ID) مطلوب للتعديل" }, { status: 400 });
     }
 
-    // تحديث البيانات في قاعدة البيانات باستخدام productsTable الصحيح
     const updatedProduct = await db
       .update(productsTable)
       .set({
@@ -132,6 +131,7 @@ export async function PUT(request: Request) {
         image: imageUrl || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae",
         brand: brand || "خميس فارما",
         description: description || "",
+        categoryId: categoryId ? Number(categoryId) : null,
       })
       .where(eq(productsTable.id, Number(id)))
       .returning();
@@ -142,11 +142,11 @@ export async function PUT(request: Request) {
   }
 }
 
-// 2. دالة إضافة دواء جديد (POST) - متوافقة مع الـ Schema تماماً
+// 2. دالة إضافة دواء جديد (POST) - مع دعم التصنيف تلقائياً
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, description, price, category, imageUrl, brand, nameEn } = body;
+    const { name, description, price, categoryId, imageUrl, brand, nameEn } = body;
 
     if (!name || !price) {
       return NextResponse.json(
@@ -155,7 +155,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // توليد slug فريد
     const slugBase = name
       .toLowerCase()
       .trim()
@@ -163,17 +162,17 @@ export async function POST(request: Request) {
       .replace(/[\s_-]+/g, "-");
     const slug = `${slugBase}-${Date.now()}`;
 
-    // إدخال الدواء مع الالتزام بجميع الحقول الإجبارية (notNull) في الجدول
     const newProduct = await db.insert(productsTable).values({
       name,
-      nameEn: nameEn || name, // إذا لم يُدخل الاسم الإنجليزي، نضع العربي افتراضياً
+      nameEn: nameEn || name,
       slug,
-      brand: brand || "خميس فارما", // قيمة افتراضية للـ brand
+      brand: brand || "خميس فارما",
       description: description || "لا توجد مواصفات مضافة حالياً",
       price: price.toString(),
-      stock: 10, // قيمة افتراضية للمخزون
-      image: imageUrl || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae", // صورة افتراضية طبية جذابة
+      stock: 10,
+      image: imageUrl || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae",
       gallery: JSON.stringify(imageUrl ? [imageUrl] : []),
+      categoryId: categoryId ? Number(categoryId) : null, // ربط التصنيف بشكل صحيح
       isFeatured: false,
       isBestseller: false,
       isNew: true,
