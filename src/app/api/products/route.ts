@@ -4,6 +4,7 @@ import { products as productsTable, categories as categoriesTable } from "@/db/s
 import { eq, desc, asc, sql, and, ilike, or } from "drizzle-orm";
 import type { SortOption } from "@/lib/types";
 
+// 1. دالة الجلب (GET)
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category");
@@ -109,4 +110,103 @@ export async function GET(request: Request) {
   });
 
   return NextResponse.json({ products, page, limit });
+}
+
+// دالة تعديل دواء (PUT)
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, name, price, imageUrl, brand, description, nameEn } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "رقم الدواء (ID) مطلوب للتعديل" }, { status: 400 });
+    }
+
+    // تحديث البيانات في قاعدة البيانات باستخدام productsTable الصحيح
+    const updatedProduct = await db
+      .update(productsTable)
+      .set({
+        name: name,
+        nameEn: nameEn || name,
+        price: price.toString(),
+        image: imageUrl || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae",
+        brand: brand || "خميس فارما",
+        description: description || "",
+      })
+      .where(eq(productsTable.id, Number(id)))
+      .returning();
+
+    return NextResponse.json({ message: "تم تحديث الدواء بنجاح", product: updatedProduct[0] });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message || "حدث خطأ أثناء التعديل" }, { status: 500 });
+  }
+}
+
+// 2. دالة إضافة دواء جديد (POST) - متوافقة مع الـ Schema تماماً
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { name, description, price, category, imageUrl, brand, nameEn } = body;
+
+    if (!name || !price) {
+      return NextResponse.json(
+        { error: "اسم الدواء والسعر حقول أساسية مطلوبة" },
+        { status: 400 }
+      );
+    }
+
+    // توليد slug فريد
+    const slugBase = name
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/[\s_-]+/g, "-");
+    const slug = `${slugBase}-${Date.now()}`;
+
+    // إدخال الدواء مع الالتزام بجميع الحقول الإجبارية (notNull) في الجدول
+    const newProduct = await db.insert(productsTable).values({
+      name,
+      nameEn: nameEn || name, // إذا لم يُدخل الاسم الإنجليزي، نضع العربي افتراضياً
+      slug,
+      brand: brand || "خميس فارما", // قيمة افتراضية للـ brand
+      description: description || "لا توجد مواصفات مضافة حالياً",
+      price: price.toString(),
+      stock: 10, // قيمة افتراضية للمخزون
+      image: imageUrl || "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae", // صورة افتراضية طبية جذابة
+      gallery: JSON.stringify(imageUrl ? [imageUrl] : []),
+      isFeatured: false,
+      isBestseller: false,
+      isNew: true,
+    }).returning();
+
+    return NextResponse.json({ success: true, product: newProduct[0] });
+  } catch (error: any) {
+    console.error("Error adding product:", error);
+    return NextResponse.json(
+      { error: "حدث خطأ أثناء إضافة الدواء: " + error.message },
+      { status: 500 }
+    );
+  }
+}
+
+// 3. دالة حذف دواء (DELETE)
+export async function DELETE(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "معرّف الدواء (ID) مطلوب للحذف" }, { status: 400 });
+    }
+
+    await db.delete(productsTable).where(eq(productsTable.id, parseInt(id)));
+
+    return NextResponse.json({ success: true, message: "تم حذف الدواء بنجاح" });
+  } catch (error: any) {
+    console.error("Error deleting product:", error);
+    return NextResponse.json(
+      { error: "فشل حذف الدواء: " + error.message },
+      { status: 500 }
+    );
+  }
 }
